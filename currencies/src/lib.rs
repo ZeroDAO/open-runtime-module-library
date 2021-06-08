@@ -53,6 +53,7 @@ use orml_traits::{
 	arithmetic::{Signed, SimpleArithmetic},
 	BalanceStatus, BasicCurrency, BasicCurrencyExtended, BasicLockableCurrency, BasicReservableCurrency,
 	LockIdentifier, MultiCurrency, MultiCurrencyExtended, MultiLockableCurrency, MultiReservableCurrency,
+	SocialCurrency, StakingCurrency,
 };
 use orml_utilities::with_transaction_result;
 use sp_runtime::{
@@ -63,6 +64,7 @@ use sp_std::{
 	convert::{TryFrom, TryInto},
 	fmt::Debug,
 	marker, result,
+	vec::Vec,
 };
 
 mod default_weight;
@@ -95,6 +97,8 @@ pub mod module {
 		type Event: From<Event<Self>> + IsType<<Self as frame_system::Config>::Event>;
 
 		type MultiCurrency: MergeAccount<Self::AccountId>
+			+ SocialCurrency<Self::AccountId>
+			+ StakingCurrency<Self::AccountId>
 			+ MultiCurrencyExtended<Self::AccountId>
 			+ MultiLockableCurrency<Self::AccountId>
 			+ MultiReservableCurrency<Self::AccountId>;
@@ -294,6 +298,60 @@ impl<T: Config> MultiCurrency<T::AccountId> for Pallet<T> {
 		} else {
 			T::MultiCurrency::slash(currency_id, who, amount)
 		}
+	}
+}
+
+impl<T: Config> StakingCurrency<T::AccountId> for Pallet<T> {
+	fn staking(currency_id: Self::CurrencyId, who: &T::AccountId, amount: Self::Balance) -> DispatchResult {
+		T::MultiCurrency::staking(currency_id, who, amount)
+	}
+
+	fn release(currency_id: Self::CurrencyId, who: &T::AccountId, amount: Self::Balance) -> DispatchResult {
+		T::MultiCurrency::release(currency_id, who, amount)
+	}
+
+	fn slash_staking(currency_id: Self::CurrencyId, amount: Self::Balance) -> DispatchResult {
+		T::MultiCurrency::slash_staking(currency_id, amount)
+	}
+}
+
+impl<T: Config> SocialCurrency<T::AccountId> for Pallet<T> {
+	fn actual_balance(currency_id: Self::CurrencyId, who: &T::AccountId) -> Self::Balance {
+		T::MultiCurrency::actual_balance(currency_id, who)
+	}
+
+	fn social_balance(currency_id: Self::CurrencyId, who: &T::AccountId) -> Self::Balance {
+		T::MultiCurrency::social_balance(currency_id, who)
+	}
+
+	fn transfer_social(
+		currency_id: Self::CurrencyId,
+		from: &T::AccountId,
+		to: &T::AccountId,
+		amount: Self::Balance,
+	) -> DispatchResult {
+		T::MultiCurrency::transfer_social(currency_id, from, to, amount)
+	}
+
+	fn thaw_all(currency_id: Self::CurrencyId, who: &T::AccountId) -> DispatchResult {
+		T::MultiCurrency::thaw_all(currency_id, who)
+	}
+
+	fn thaw(currency_id: Self::CurrencyId, who: &T::AccountId, amount: Self::Balance) -> DispatchResult {
+		T::MultiCurrency::thaw(currency_id, who, amount)
+	}
+
+	fn bat_share(
+		currency_id: Self::CurrencyId,
+		from: &T::AccountId,
+		users: &Vec<T::AccountId>,
+		total_amount: Self::Balance,
+	) -> DispatchResult {
+		T::MultiCurrency::bat_share(currency_id, from, users, total_amount)
+	}
+
+	fn social_staking(currency_id: Self::CurrencyId, who: &T::AccountId, amount: Self::Balance) -> DispatchResult {
+		T::MultiCurrency::social_staking(currency_id, who, amount)
 	}
 }
 

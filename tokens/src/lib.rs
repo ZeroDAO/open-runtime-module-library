@@ -54,12 +54,12 @@ use orml_traits::{
 	account::MergeAccount,
 	arithmetic::{self, Signed},
 	BalanceStatus, GetByKey, LockIdentifier, MultiCurrency, MultiCurrencyExtended, MultiLockableCurrency,
-	MultiReservableCurrency, OnDust,
+	MultiReservableCurrency, OnDust, SocialCurrency, StakingCurrency,
 };
 use sp_runtime::{
 	traits::{
-		AccountIdConversion, AtLeast32BitUnsigned, Bounded, CheckedAdd, CheckedSub, MaybeSerializeDeserialize, Member,
-		Saturating, StaticLookup, Zero,
+		AccountIdConversion, AtLeast32BitUnsigned, Bounded, CheckedAdd, CheckedDiv, CheckedSub,
+		MaybeSerializeDeserialize, Member, Saturating, StaticLookup, Zero,
 	},
 	DispatchError, DispatchResult, ModuleId, RuntimeDebug,
 };
@@ -129,6 +129,8 @@ pub struct AccountData<Balance> {
 	pub reserved: Balance,
 	/// The amount that `free` may not drop below when withdrawing.
 	pub frozen: Balance,
+	/// Balance of social tokens.
+	pub social: Balance,
 }
 
 impl<Balance: Saturating + Copy + Ord> AccountData<Balance> {
@@ -141,6 +143,10 @@ impl<Balance: Saturating + Copy + Ord> AccountData<Balance> {
 	/// ignoring any frozen.
 	fn total(&self) -> Balance {
 		self.free.saturating_add(self.reserved)
+	}
+	/// The total balance in this account ignoring any frozen.
+	fn actual_total(&self) -> Balance {
+		self.free.saturating_add(self.reserved).saturating_add(self.social)
 	}
 }
 
@@ -200,6 +206,10 @@ pub mod module {
 		LiquidityRestrictions,
 		/// Account still has active reserved
 		StillHasActiveReserved,
+		/// Cannot share to self
+		NotAllowedShareToSelf,
+		/// Failed because the Total Staking was Overflow
+		TotalStakingOverflow,
 	}
 
 	#[pallet::event]
@@ -217,6 +227,11 @@ pub mod module {
 	#[pallet::storage]
 	#[pallet::getter(fn total_issuance)]
 	pub type TotalIssuance<T: Config> = StorageMap<_, Twox64Concat, T::CurrencyId, T::Balance, ValueQuery>;
+
+	/// The total staking of a token type.
+	#[pallet::storage]
+	#[pallet::getter(fn total_staking)]
+	pub type TotalStaking<T: Config> = StorageMap<_, Twox64Concat, T::CurrencyId, T::Balance, ValueQuery>;
 
 	/// Any liquidity locks of a token type under an account.
 	/// NOTE: Should only be accessed when setting, changing and freeing a lock.
@@ -407,6 +422,16 @@ impl<T: Config> Pallet<T> {
 			Ok(f(account, existed))
 		})
 		.expect("Error is infallible; qed")
+	}
+
+	/// Set social balance of `who` to a new value.
+	///
+	/// Note this will not maintain total issuance, and the caller is
+	/// expected to do it.
+	pub(crate) fn set_social_balance(currency_id: T::CurrencyId, who: &T::AccountId, amount: T::Balance) {
+		Self::mutate_account(who, currency_id, |account, _| {
+			account.social = amount;
+		});
 	}
 
 	/// Set free balance of `who` to a new value.
@@ -605,6 +630,175 @@ impl<T: Config> MultiCurrency<T::AccountId> for Pallet<T> {
 		// issuance
 		<TotalIssuance<T>>::mutate(currency_id, |v| *v -= amount - remaining_slash);
 		remaining_slash
+	}
+}
+
+impl<T: Config> StakingCurrency<T::AccountId> for Pallet<T> {
+	/// Low-level staking operations, which do not keep collateral records for
+	/// efficient processing of staking, require their own maintenance records
+	/// and ensure accuracy
+	fn staking(currency_id: Self::CurrencyId, who: &T::AccountId, amount: Self::Balance) -> DispatchResult {
+		if amount.is_zero() {
+			return Ok(());
+		}
+		Self::ensure_can_withdraw(currency_id, who, amount)?;
+
+		let who_balance = Self::free_balance(currency_id, who);
+		let staking_balance = Self::total_staking(currency_id)
+			.checked_add(&amount)
+			.ok_or(Error::<T>::BalanceOverflow)?;
+
+		Self::set_free_balance(currency_id, who, who_balance - amount);
+		TotalStaking::<T>::insert(currency_id, staking_balance);
+
+		Ok(())
+	}
+
+	/// Transfer the amount in staking to `who`
+	fn release(currency_id: Self::CurrencyId, who: &T::AccountId, amount: Self::Balance) -> DispatchResult {
+		if amount.is_zero() {
+			return Ok(());
+		}
+
+		let who_balance = Self::free_balance(currency_id, who)
+			.checked_add(&amount)
+			.ok_or(Error::<T>::BalanceOverflow)?;
+
+		Self::set_free_balance(currency_id, who, who_balance);
+		TotalStaking::<T>::mutate(currency_id, |total_staking| *total_staking -= amount);
+
+		Ok(())
+	}
+
+	/// Burn the token in staking
+	fn slash_staking(currency_id: Self::CurrencyId, amount: Self::Balance) -> DispatchResult {
+		TotalStaking::<T>::try_mutate(currency_id, |total_staking| -> DispatchResult {
+			<TotalIssuance<T>>::mutate(currency_id, |v| *v -= *total_staking);
+
+			*total_staking = total_staking.checked_sub(&amount).ok_or(Error::<T>::BalanceTooLow)?;
+
+			Ok(())
+		})?;
+		Ok(())
+	}
+}
+
+impl<T: Config> SocialCurrency<T::AccountId> for Pallet<T> {
+	/// The actual balance of `who`
+	fn actual_balance(currency_id: Self::CurrencyId, who: &T::AccountId) -> Self::Balance {
+		Self::accounts(who, currency_id).actual_total()
+	}
+
+	/// The social balance of `who`
+	fn social_balance(currency_id: Self::CurrencyId, who: &T::AccountId) -> Self::Balance {
+		Self::accounts(who, currency_id).social
+	}
+
+	/// Decrease the free balance of `from` and increase the social currency of `to`
+	fn transfer_social(
+		currency_id: Self::CurrencyId,
+		from: &T::AccountId,
+		to: &T::AccountId,
+		amount: Self::Balance,
+	) -> DispatchResult {
+		if amount.is_zero() {
+			return Ok(());
+		}
+		Self::ensure_can_withdraw(currency_id, from, amount)?;
+
+		let from_balance = Self::free_balance(currency_id, from);
+		let to_social_balance = Self::social_balance(currency_id, to)
+			.checked_add(&amount)
+			.ok_or(Error::<T>::BalanceOverflow)?;
+
+		Self::set_free_balance(currency_id, from, from_balance - amount);
+		Self::set_social_balance(currency_id, to, to_social_balance);
+
+		Ok(())
+	}
+
+	/// Unlock `who`'s all social currencies
+	fn thaw_all(currency_id: Self::CurrencyId, who: &T::AccountId) -> DispatchResult {
+		let social_balance = Self::social_balance(currency_id, who);
+
+		let free_balance = Self::free_balance(currency_id, who)
+			.checked_add(&social_balance)
+			.ok_or(Error::<T>::BalanceOverflow)?;
+
+		Self::set_free_balance(currency_id, who, free_balance);
+		Self::set_social_balance(currency_id, who, Zero::zero());
+
+		Ok(())
+	}
+
+	fn thaw(currency_id: Self::CurrencyId, who: &T::AccountId, amount: Self::Balance) -> DispatchResult {
+		if amount.is_zero() {
+			return Ok(());
+		}
+		let social_balance = Self::social_balance(currency_id, who)
+			.checked_sub(&amount)
+			.ok_or(Error::<T>::BalanceOverflow)?;
+
+		let free_balance = Self::free_balance(currency_id, who)
+			.checked_add(&social_balance)
+			.ok_or(Error::<T>::BalanceOverflow)?;
+
+		Self::set_free_balance(currency_id, who, free_balance);
+		Self::set_social_balance(currency_id, who, social_balance);
+
+		Ok(())
+	}
+
+	fn bat_share(
+		currency_id: Self::CurrencyId,
+		from: &T::AccountId,
+		users: &Vec<T::AccountId>,
+		total_amount: Self::Balance,
+	) -> DispatchResult {
+		if let Some(count) = TryInto::<Self::Balance>::try_into(users.len()).ok() {
+			let amount = total_amount
+				.checked_div(&count)
+				.ok_or(Error::<T>::NotAllowedShareToSelf)?;
+
+			if amount.is_zero() {
+				return Ok(());
+			}
+
+			let from_social_balance = Self::social_balance(currency_id, from)
+				.checked_sub(&total_amount)
+				.ok_or(Error::<T>::BalanceTooLow)?;
+
+			let mut users_balance = Vec::new();
+
+			for user in users.iter() {
+				ensure!(from != user, Error::<T>::NotAllowedShareToSelf);
+				let social_balance = Self::social_balance(currency_id, user)
+					.checked_add(&amount)
+					.ok_or(Error::<T>::BalanceOverflow)?;
+				users_balance.push((user, social_balance));
+			}
+
+			users_balance.iter().for_each(|(u, b)| {
+				Self::set_social_balance(currency_id, u, *b);
+			});
+
+			Self::set_social_balance(currency_id, from, from_social_balance);
+		};
+
+		Ok(())
+	}
+
+	fn social_staking(currency_id: Self::CurrencyId, who: &T::AccountId, amount: Self::Balance) -> DispatchResult {
+		let social_amount = Self::social_balance(currency_id, who)
+			.checked_sub(&amount)
+			.ok_or(Error::<T>::BalanceTooLow)?;
+
+		TotalStaking::<T>::try_mutate(currency_id, |b| -> DispatchResult {
+			*b = b.checked_add(&amount).ok_or(Error::<T>::TotalStakingOverflow)?;
+			Self::set_social_balance(currency_id, who, social_amount);
+			Ok(())
+		})?;
+		Ok(())
 	}
 }
 

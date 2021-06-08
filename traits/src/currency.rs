@@ -10,6 +10,7 @@ use sp_std::{
 	convert::{TryFrom, TryInto},
 	fmt::Debug,
 	result,
+	vec::Vec,
 };
 
 /// Abstraction over a fungible multi-currency system.
@@ -66,6 +67,82 @@ pub trait MultiCurrency<AccountId> {
 	/// As much funds up to `amount` will be deducted as possible.  If this is
 	/// less than `amount`,then a non-zero value will be returned.
 	fn slash(currency_id: Self::CurrencyId, who: &AccountId, amount: Self::Balance) -> Self::Balance;
+}
+
+/// Efficiency-first staking
+pub trait StakingCurrency<AccountId>: MultiCurrency<AccountId> {
+
+	/// User `who` staking `amount` of `currency_id`.
+	/// 
+	/// Low-level operations, which do not store collateral details
+	/// to support one-time processing of frequent staking
+	/// and need to be maintained in the pallet.
+	fn staking(currency_id: Self::CurrencyId, who: &AccountId, amount: Self::Balance) -> DispatchResult;
+
+	/// Release `amount` of currency_id from the total staking to `who`.
+	/// 
+	/// Low-level operations, support for releasing amounts below the 
+	/// total staking to the `who`.
+	fn release(currency_id: Self::CurrencyId, who: &AccountId, amount: Self::Balance) -> DispatchResult;
+
+	/// Slash staking and reduction total issue.
+	/// 
+	/// Reduction of `amount` `currency_id`, burn `amount` in total issue.
+	fn slash_staking(currency_id: Self::CurrencyId, amount: Self::Balance) -> DispatchResult;
+}
+
+/// Social currency with circulation restrictions and sharing capabilities.
+pub trait SocialCurrency<AccountId>: MultiCurrency<AccountId> {
+
+	/// Actual total for users including social currency.
+	///
+	/// The total balance includes social currency and any that is reserved 
+	/// and ignoring any frozen. 
+	fn actual_balance(currency_id: Self::CurrencyId, who: &AccountId) -> Self::Balance;
+
+	/// Social currency balance of user.
+	///
+	/// Social currency balance of `who`.
+	fn social_balance(currency_id: Self::CurrencyId, who: &AccountId) -> Self::Balance;
+
+	/// External interface for social finance.
+	///
+	/// Decrease the free balance of `from` by `amount`, increase
+	/// the social balance of `to` by amount.
+	fn transfer_social(
+		currency_id: Self::CurrencyId,
+		from: &AccountId,
+		to: &AccountId,
+		amount: Self::Balance,
+	) -> DispatchResult;
+
+	/// Unlock all user social currencies to free balance.
+	///
+	/// According to the definition of social currency, the user should not have permission
+	/// for that operation, but should have rules to control.
+	fn thaw_all(currency_id: Self::CurrencyId, who: &AccountId) -> DispatchResult;
+
+	/// Unlock user social currencies to free balance.
+	///
+	/// According to the definition of social currency, the user should not have permission
+	/// for that operation, but should have rules to control.
+	fn thaw(currency_id: Self::CurrencyId, who: &AccountId, amount: Self::Balance) -> DispatchResult;
+
+	/// Share social currency in bulk to other users.
+	///
+	/// The social currency of each user in `users` increases `amount` and decreases
+	/// the total social currency balance of `from`.
+	fn bat_share(
+		currency_id: Self::CurrencyId,
+		from: &AccountId,
+		users: &Vec<AccountId>,
+		amount: Self::Balance,
+	) -> DispatchResult;
+
+	/// Using social currency staking.
+	///
+	/// Directly using social currency of `who` as staking
+	fn social_staking(currency_id: Self::CurrencyId, who: &AccountId, amount: Self::Balance) -> DispatchResult;
 }
 
 /// Extended `MultiCurrency` with additional helper types and methods.
