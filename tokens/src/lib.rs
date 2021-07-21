@@ -756,13 +756,10 @@ impl<T: Config> SocialCurrency<T::AccountId> for Pallet<T> {
 		total_amount: Self::Balance,
 	) -> DispatchResult {
 		if let Some(count) = TryInto::<Self::Balance>::try_into(users.len()).ok() {
-			let amount = total_amount
-				.checked_div(&count)
-				.ok_or(Error::<T>::NotAllowedShareToSelf)?;
-
-			if amount.is_zero() {
+			if count.is_zero() || total_amount.is_zero() || count > total_amount {
 				return Ok(());
 			}
+			let amount = total_amount.checked_div(&count).ok_or(Error::<T>::BalanceOverflow)?;
 
 			let from_social_balance = Self::social_balance(currency_id, from)
 				.checked_sub(&total_amount)
