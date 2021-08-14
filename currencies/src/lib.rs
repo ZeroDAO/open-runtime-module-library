@@ -345,13 +345,17 @@ impl<T: Config> SocialCurrency<T::AccountId> for Pallet<T> {
 		currency_id: Self::CurrencyId,
 		from: &T::AccountId,
 		users: &Vec<T::AccountId>,
-		total_amount: Self::Balance,
+		amount: Self::Balance,
 	) -> DispatchResult {
-		T::MultiCurrency::bat_share(currency_id, from, users, total_amount)
+		T::MultiCurrency::bat_share(currency_id, from, users, amount)
 	}
 
 	fn social_staking(currency_id: Self::CurrencyId, who: &T::AccountId, amount: Self::Balance) -> DispatchResult {
 		T::MultiCurrency::social_staking(currency_id, who, amount)
+	}
+
+	fn social_burn(currency_id: Self::CurrencyId, who: &T::AccountId, amount: Self::Balance) -> DispatchResult {
+		T::MultiCurrency::social_burn(currency_id, who, amount)
 	}
 }
 

@@ -753,13 +753,13 @@ impl<T: Config> SocialCurrency<T::AccountId> for Pallet<T> {
 		currency_id: Self::CurrencyId,
 		from: &T::AccountId,
 		users: &Vec<T::AccountId>,
-		total_amount: Self::Balance,
+		amount: Self::Balance,
 	) -> DispatchResult {
 		if let Some(count) = TryInto::<Self::Balance>::try_into(users.len()).ok() {
-			if count.is_zero() || total_amount.is_zero() || count > total_amount {
+			if count.is_zero() || amount.is_zero() || count > amount {
 				return Ok(());
 			}
-			let amount = total_amount.checked_div(&count).ok_or(Error::<T>::BalanceOverflow)?;
+			let total_amount = amount.checked_mul(&count).ok_or(Error::<T>::BalanceOverflow)?;
 
 			let from_social_balance = Self::social_balance(currency_id, from)
 				.checked_sub(&total_amount)
@@ -795,6 +795,16 @@ impl<T: Config> SocialCurrency<T::AccountId> for Pallet<T> {
 			Self::set_social_balance(currency_id, who, social_amount);
 			Ok(())
 		})?;
+		Ok(())
+	}
+
+	fn social_burn(currency_id: Self::CurrencyId, who: &T::AccountId, amount: Self::Balance) -> DispatchResult {
+		let social_amount = Self::social_balance(currency_id, who)
+			.checked_sub(&amount)
+			.ok_or(Error::<T>::BalanceTooLow)?;
+
+		Self::set_social_balance(currency_id, who, social_amount);
+		<TotalIssuance<T>>::mutate(currency_id, |v| *v -= amount);
 		Ok(())
 	}
 }

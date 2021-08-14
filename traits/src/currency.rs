@@ -143,6 +143,9 @@ pub trait SocialCurrency<AccountId>: MultiCurrency<AccountId> {
 	///
 	/// Directly using social currency of `who` as staking
 	fn social_staking(currency_id: Self::CurrencyId, who: &AccountId, amount: Self::Balance) -> DispatchResult;
+
+	/// Burn social currency.
+	fn social_burn(currency_id: Self::CurrencyId, who: &AccountId, amount: Self::Balance) -> DispatchResult
 }
 
 /// Extended `MultiCurrency` with additional helper types and methods.
