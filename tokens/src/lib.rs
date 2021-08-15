@@ -58,7 +58,7 @@ use orml_traits::{
 };
 use sp_runtime::{
 	traits::{
-		AccountIdConversion, AtLeast32BitUnsigned, Bounded, CheckedAdd, CheckedDiv, CheckedSub,
+		AccountIdConversion, AtLeast32BitUnsigned, Bounded, CheckedAdd, CheckedSub, CheckedMul,
 		MaybeSerializeDeserialize, Member, Saturating, StaticLookup, Zero,
 	},
 	DispatchError, DispatchResult, ModuleId, RuntimeDebug,
