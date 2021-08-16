@@ -62,6 +62,35 @@ impl<T: Ord> OrderedSet<T> {
 	pub fn clear(&mut self) {
 		self.0.clear();
 	}
+
+	/// Set length
+    pub fn len(&self) -> usize {
+		self.0.len()
+	}
+
+	/// Find the difference set of two Sets
+    pub fn sub_set(&mut self, value: &Vec<T>) {
+        if value.is_empty() {
+            return;
+        };
+        let v_len = value.len();
+        let range = (self.0.len() / v_len) + 1;
+        value.iter().fold(0, |acc, v| {
+            let mut pross = acc;
+            while pross < self.0.len() {
+                let end = pross.saturating_add(range).min(self.len());
+                if self.0[pross] <= *v && self.0[end] >= *v {
+                    if let Ok(index) = self.0[pross..end].binary_search(&v) {
+                        pross = index + pross - 1;
+                        self.0.remove(pross + 1);
+                    }
+                    break;
+                }
+                pross = end;
+            }
+            pross
+        });
+    }
 }
 
 impl<T: Ord> From<Vec<T>> for OrderedSet<T> {
@@ -142,4 +171,23 @@ mod tests {
 		set.clear();
 		assert_eq!(set, OrderedSet::new());
 	}
+
+	#[test]
+    fn len() {
+        let set_1: OrderedSet<i32> = OrderedSet::from(vec![1, 2, 3, 4]);
+        let set_2: OrderedSet<i32> = OrderedSet::from(vec![]);
+        let set_3: OrderedSet<i32> = OrderedSet::from(vec![1, 2, 2, 3, 4, 4, 4]);
+
+        assert_eq!(set_1.len(), 4);
+        assert_eq!(set_2.len(), 0);
+        assert_eq!(set_3.len(), 4);
+    }
+
+    #[test]
+    fn sub_set() {
+        let mut set_left: OrderedSet<i32> = OrderedSet::from(vec![1, 2, 3, 4, 5, 6]);
+        let set_right= vec![2, 3, 4];
+        set_left.sub_set(&set_right);
+        assert_eq!(set_left, OrderedSet::from(vec![1, 5, 6]));
+    }
 }
