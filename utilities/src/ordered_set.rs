@@ -79,10 +79,10 @@ impl<T: Ord> OrderedSet<T> {
             let mut pross = acc;
             while pross < self.0.len() {
                 let end = pross.saturating_add(range).min(self.len());
-                if self.0[pross] <= *v && self.0[end] >= *v {
+                if self.0[pross] <= *v && self.0[end - 1] >= *v {
                     if let Ok(index) = self.0[pross..end].binary_search(&v) {
-                        pross = index + pross - 1;
-                        self.0.remove(pross + 1);
+                        pross = index + pross;
+                        self.0.remove(pross);
                     }
                     break;
                 }
