@@ -302,6 +302,10 @@ impl<T: Config> MultiCurrency<T::AccountId> for Pallet<T> {
 }
 
 impl<T: Config> StakingCurrency<T::AccountId> for Pallet<T> {
+	fn total_staking(currency_id: Self::CurrencyId) -> Self::Balance {
+		T::MultiCurrency::total_staking(currency_id, who, amount)
+	}
+
 	fn staking(currency_id: Self::CurrencyId, who: &T::AccountId, amount: Self::Balance) -> DispatchResult {
 		T::MultiCurrency::staking(currency_id, who, amount)
 	}

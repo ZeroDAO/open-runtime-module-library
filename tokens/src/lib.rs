@@ -634,6 +634,10 @@ impl<T: Config> MultiCurrency<T::AccountId> for Pallet<T> {
 }
 
 impl<T: Config> StakingCurrency<T::AccountId> for Pallet<T> {
+	fn total_staking(currency_id: Self::CurrencyId) -> Self::Balance {
+		<TotalStaking<T>>::get(currency_id)
+	}
+
 	/// Low-level staking operations, which do not keep collateral records for
 	/// efficient processing of staking, require their own maintenance records
 	/// and ensure accuracy

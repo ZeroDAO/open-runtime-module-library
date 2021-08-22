@@ -71,6 +71,8 @@ pub trait MultiCurrency<AccountId> {
 
 /// Efficiency-first staking
 pub trait StakingCurrency<AccountId>: MultiCurrency<AccountId> {
+	/// The total staking amount of issuance of `currency_id`.
+	fn total_staking(currency_id: Self::CurrencyId) -> Self::Balance;
 
 	/// User `who` staking `amount` of `currency_id`.
 	/// 
