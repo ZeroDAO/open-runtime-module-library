@@ -139,14 +139,15 @@ impl<Balance: Saturating + Copy + Ord> AccountData<Balance> {
 	pub(crate) fn frozen(&self) -> Balance {
 		self.frozen
 	}
+	/// The total balance in this account ignoring any frozen.
+	fn total(&self) -> Balance {
+		self.free.saturating_add(self.reserved).saturating_add(self.social)
+	}
+	
 	/// The total balance in this account including any that is reserved and
 	/// ignoring any frozen.
-	fn total(&self) -> Balance {
-		self.free.saturating_add(self.reserved)
-	}
-	/// The total balance in this account ignoring any frozen.
 	fn actual_total(&self) -> Balance {
-		self.free.saturating_add(self.reserved).saturating_add(self.social)
+		self.free.saturating_add(self.reserved)
 	}
 }
 
